@@ -1,0 +1,5 @@
+[package]
+
+name = "rustmark"
+version = "0.0.1"
+authors = ["EinfachToll <istjanichtzufassen@googlemail.com>"]
