@@ -3,6 +3,6 @@ Rustmark
 
 Markdown implementation following the CommonMark spec http://commonmark.org/
 
-Written in Rust 0.13 nightly from some weeks ago, might not compile under a recent Rust.
+Written in Rust 0.13 nightly from 2015-01-05, it might or might not compile under a recent Rust.
 
-Not functionable yet, but most parts of the parser work.
+Most parts of the parser work, but it does not produce HTML yet.

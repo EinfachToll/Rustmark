@@ -7,7 +7,7 @@ static RX_ABSOLUTE_URI: Regex = regex!(r"<((?i:coap|doi|javascript|aaa|aaas|abou
 
 static RX_EMAIL_ADDRESS: Regex = regex!(r"<([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>");
 
-#[deriving(Show)]
+#[derive(Show)]
 enum Inline {
     Autolink(String),
     HTMLTag(String),
@@ -154,25 +154,22 @@ fn make_emph_strong_inline(text: String, number_of_emphs: uint) -> Inline {
 
 
 fn make_emph_strong_tag(stack: &mut Vec<Emphasis>, pos_in_stack: uint, end_emph: Emphasis) -> (uint, uint, uint) {
-    let start_emph: Emphasis = stack[pos_in_stack];
+    let start_emph: Emphasis = stack.remove(pos_in_stack);
     stack.truncate(pos_in_stack);
     let mut start_pos: uint;
     let mut end_pos: uint;
     let mut length: uint;
     if start_emph.length < end_emph.length {
         length = start_emph.length;
-        let mut new_start_emph = end_emph;
-        new_start_emph.pos = end_emph.pos + length;
-        new_start_emph.length = end_emph.length - length;
+        let new_start_emph = Emphasis{ch:end_emph.ch, pos: end_emph.pos + length, length: end_emph.length - length};
         stack.push(new_start_emph);
         start_pos = start_emph.pos;
         end_pos = end_emph.pos;
     } else if start_emph.length > end_emph.length {
         length = end_emph.length;
-        let mut new_start_emph = start_emph;
-        new_start_emph.length = start_emph.length - length;
+        let new_start_emph = Emphasis{ch: start_emph.ch, length: start_emph.length - length, pos: start_emph.pos };
         stack.push(new_start_emph);
-        start_pos = start_emph.pos + new_start_emph.length;
+        start_pos = start_emph.pos + start_emph.length - length;
         end_pos = end_emph.pos;
     } else {
         length = start_emph.length;
