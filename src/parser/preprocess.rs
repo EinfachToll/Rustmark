@@ -3,7 +3,7 @@ use std::iter::repeat;
 pub fn preprocess_text(s: &str) -> Vec<String> {
     let mut input: String = s.to_string();
     // delete all U+0000 characters
-    input = input.replace("\u{0000}", "");
+    input = input.replace("\u{0000}", "\u{FFFC}");
     // a string must end with \n in order to make lines_any() work
     if !input.ends_with("\n") {
         input.push('\n');

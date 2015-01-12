@@ -2,14 +2,14 @@
 use std::str::CharRange;
 use regex::Regex;
 
-//XXX dont include control characters
-static RX_ABSOLUTE_URI: Regex = regex!(r"<((?i:coap|doi|javascript|aaa|aaas|about|acap|cap|cid|crid|data|dav|dict|dns|file|ftp|geo|go|gopher|h323|http|https|iax|icap|im|imap|info|ipp|iris|iris\.beep|iris\.xpc|iris\.xpcs|iris\.lwz|ldap|mailto|mid|msrp|msrps|mtqp|mupdate|news|nfs|ni|nih|nntp|opaquelocktoken|pop|pres|rtsp|service|session|shttp|sieve|sip|sips|sms|snmp|soap\.beep|soap\.beeps|tag|tel|telnet|tftp|thismessage|tn3270|tip|tv|urn|vemmi|ws|wss|xcon|xcon-userid|xmlrpc\.beep|xmlrpc\.beeps|xmpp|z39\.50r|z39\.50s|adiumxtra|afp|afs|aim|apt|attachment|aw|beshare|bitcoin|bolo|callto|chrome|chrome-extension|com-eventbrite-attendee|content|cvs|dlna-playsingle|dlna-playcontainer|dtn|dvb|ed2k|facetime|feed|finger|fish|gg|git|gizmoproject|gtalk|hcp|icon|ipn|irc|irc6|ircs|itms|jar|jms|keyparc|lastfm|ldaps|magnet|maps|market|message|mms|ms-help|msnim|mumble|mvn|notes|oid|palm|paparazzi|platform|proxy|psyc|query|res|resource|rmi|rsync|rtmp|secondlife|sftp|sgn|skype|smb|soldat|spotify|ssh|steam|svn|teamspeak|things|udp|unreal|ut2004|ventrilo|view-source|webcal|wtai|wyciwyg|xfire|xri|ymsgr):[^<> ]+)>");
+static RX_ABSOLUTE_URI: Regex = regex!(r"<(?i:coap|doi|javascript|aaa|aaas|about|acap|cap|cid|crid|data|dav|dict|dns|file|ftp|geo|go|gopher|h323|http|https|iax|icap|im|imap|info|ipp|iris|iris\.beep|iris\.xpc|iris\.xpcs|iris\.lwz|ldap|mailto|mid|msrp|msrps|mtqp|mupdate|news|nfs|ni|nih|nntp|opaquelocktoken|pop|pres|rtsp|service|session|shttp|sieve|sip|sips|sms|snmp|soap\.beep|soap\.beeps|tag|tel|telnet|tftp|thismessage|tn3270|tip|tv|urn|vemmi|ws|wss|xcon|xcon-userid|xmlrpc\.beep|xmlrpc\.beeps|xmpp|z39\.50r|z39\.50s|adiumxtra|afp|afs|aim|apt|attachment|aw|beshare|bitcoin|bolo|callto|chrome|chrome-extension|com-eventbrite-attendee|content|cvs|dlna-playsingle|dlna-playcontainer|dtn|dvb|ed2k|facetime|feed|finger|fish|gg|git|gizmoproject|gtalk|hcp|icon|ipn|irc|irc6|ircs|itms|jar|jms|keyparc|lastfm|ldaps|magnet|maps|market|message|mms|ms-help|msnim|mumble|mvn|notes|oid|palm|paparazzi|platform|proxy|psyc|query|res|resource|rmi|rsync|rtmp|secondlife|sftp|sgn|skype|smb|soldat|spotify|ssh|steam|svn|teamspeak|things|udp|unreal|ut2004|ventrilo|view-source|webcal|wtai|wyciwyg|xfire|xri|ymsgr):[^<> ]+>");
 
-static RX_EMAIL_ADDRESS: Regex = regex!(r"<([a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>");
+static RX_EMAIL_ADDRESS: Regex = regex!(r"<[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*>");
 
 #[derive(Show)]
 enum Inline {
-    Autolink(String),
+    URIAutolink(String),
+    EmailAutolink(String),
     HTMLTag(String),
     CodeSpan(String),
     Link(Box<Inline>, String, String),
@@ -22,14 +22,105 @@ enum Inline {
 pub type InlineText = Vec<Inline>;
 
 
-fn parse_autolinks(s: &str) -> InlineText {
-    for cap in RX_ABSOLUTE_URI.captures_iter(s) {
-        println!("->{}<-", cap.at(1));
+fn find_first_uri_autolink(text: &str) -> Option<(Inline, uint, uint)> {
+    return match RX_ABSOLUTE_URI.find(text) {
+        Some((from, to)) => Some((Inline::URIAutolink(text.slice(from+1, to-1).to_string()), from, to)),
+        None => None,
     }
-    for cap in RX_EMAIL_ADDRESS.captures_iter(s) {
-        println!("+>{}<-", cap.at(1));
+}
+
+
+fn find_first_email(text: &str) -> Option<(Inline, uint, uint)> {
+    return match RX_EMAIL_ADDRESS.find(text) {
+        Some((from, to)) => Some((Inline::EmailAutolink(text.slice(from+1, to-1).to_string()), from, to)),
+        None => None,
     }
-    return Vec::new();
+}
+
+
+fn find_first_code_span(text: &str) -> Option<(Inline, uint, uint)> {
+    let mut pos = 0;
+    let mut seen_bts: Vec<(uint, uint)> = Vec::new();
+    while pos < text.len() {
+        let CharRange {ch, next} = text.char_range_at(pos);
+        if ch == '`' {
+            let bts_start = pos;
+            let mut bts_length = 1u;
+
+            // collect backtick string
+            pos = next;
+            while pos < text.len() {
+                let CharRange {ch, next} = text.char_range_at(pos);
+                pos = next;
+                if ch == '`' {
+                    bts_length += 1;
+                } else {
+                    break;
+                }
+            }
+
+            // look for backtick string of the same length in seen_bts, the text between is the
+            // code string
+            for &(seen_bts_start, seen_bts_length) in seen_bts.iter() {
+                if seen_bts_length == bts_length {
+                    return Some((Inline::CodeSpan(
+                                text.slice(seen_bts_start+bts_length, bts_start).to_string()),
+                                seen_bts_start,
+                                bts_start+bts_length));
+                }
+            }
+
+            // not found, so we append the position info of the backtick string to seen_bts
+            seen_bts.push((bts_start, bts_length))
+        } else {
+            pos = next;
+        }
+    }
+    return None;
+}
+
+fn find_first_html(text: &str) -> Option<(Inline, uint, uint)> {
+    return None;
+}
+
+fn parse_autolinks_code_and_html(text: &str) -> InlineText {
+    let mut result = Vec::new();
+    let mut pos_in_text = 0u;
+    loop {
+        let subslice = text.slice_from(pos_in_text);
+
+        // look for the first autolink, code or html block in the text
+        let possible_absolut_uri = find_first_uri_autolink(subslice);
+        let possible_email = find_first_email(subslice);
+        let possible_code_span = find_first_code_span(subslice);
+        let possible_html = find_first_html(subslice);
+
+        let mut first_element = box possible_absolut_uri;
+        if possible_email.is_some() && (first_element.is_none() || possible_email.as_ref().unwrap().1 < first_element.as_ref().unwrap().1) {
+            first_element = box possible_email;
+        }
+        if possible_code_span.is_some() && (first_element.is_none() || possible_code_span.as_ref().unwrap().1 < first_element.as_ref().unwrap().1) {
+            first_element = box possible_code_span;
+        }
+        if possible_html.is_some() && (first_element.is_none() || possible_html.as_ref().unwrap().1 < first_element.as_ref().unwrap().1) {
+            first_element = box possible_html;
+        }
+
+        // if there is a autolink, code or html element, split the text and process the second half
+        // TODO: there is room for optimization: don't throw away found but unused elements
+        if first_element.is_none() {
+            break;
+        } else {
+            let (inline, start, end) = first_element.unwrap();
+            result.push(Inline::Text(subslice.slice_to(start).to_string()));
+            result.push(inline);
+            pos_in_text += end;
+        }
+    }
+
+    // don't forget the rest of the string
+    result.push(Inline::Text(text.slice_from(pos_in_text).to_string()));
+    return result;
 }
 
 struct Emphasis {
@@ -50,7 +141,7 @@ fn parse_emphasis_and_strong(s: &str) -> InlineText {
 
         if ch == '*' || ch == '_' {
 
-            // collect the whole chunk of *** or ___
+            // collect the whole string of *** or ___
             let symbol = ch;
             let symbol_start = pos;
             let mut length = 1u;
@@ -143,13 +234,17 @@ fn parse_emphasis_and_strong(s: &str) -> InlineText {
     return result;
 }
 
-
 fn make_emph_strong_inline(text: String, number_of_emphs: uint) -> Inline {
-    match number_of_emphs {
-        1 => Inline::Emph(box Inline::Text(text)),
-        2 => Inline::Strong(box Inline::Text(text)),
-        _ => Inline::Strong(box make_emph_strong_inline(text, number_of_emphs-2))
+    let mut n = number_of_emphs;
+    let mut result: Inline = Inline::Text(text);
+    if n % 2 == 1 {
+        result = Inline::Emph(box result);
+        n -= 1;
     }
+    for _ in range(0, n/2) {
+        result = Inline::Strong(box result);
+    }
+    return result;
 }
 
 
@@ -182,5 +277,6 @@ fn make_emph_strong_tag(stack: &mut Vec<Emphasis>, pos_in_stack: uint, end_emph:
 
 pub fn parse_inline(s: String) -> InlineText {
     //return parse_emphasis_and_strong(s.as_slice());
-    return parse_autolinks(s.as_slice());
+    return parse_autolinks_code_and_html(s.as_slice());
+    //return vec![Inline::Text(s)];
 }
